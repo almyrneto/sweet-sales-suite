@@ -43,6 +43,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+const supabaseUntyped = supabase as any;
+
 export const Route = createFileRoute("/_app/leads")({
   component: LeadsPage,
 });
@@ -60,11 +62,28 @@ interface Lead {
   stage: StageId;
   position: number;
   campaign_id: string | null;
+  assigned_to: string | null;
 }
 
 interface Campaign {
   id: string;
   name: string;
+}
+
+interface WorkspaceMember {
+  user_id: string;
+  role: string;
+}
+
+interface CustomField {
+  id: string;
+  name: string;
+  field_key: string;
+}
+
+interface LeadCustomFieldValue {
+  custom_field_id: string;
+  value: string | null;
 }
 
 function LeadsPage() {
@@ -86,10 +105,10 @@ function LeadsPage() {
     setLoading(true);
 
     const [{ data: ld }, { data: cp }] = await Promise.all([
-      supabase
+      supabaseUntyped
         .from("leads")
         .select(
-          "id,name,company,title,email,linkedin_url,phone,notes,lead_source,stage,position,campaign_id"
+          "id,name,company,title,email,linkedin_url,phone,notes,lead_source,stage,position,campaign_id,assigned_to"
         )
         .eq("workspace_id", workspaceId)
         .order("position"),
@@ -176,7 +195,7 @@ function LeadsPage() {
       prev.map((l) => (l.id === leadId ? { ...l, stage: newStage } : l))
     );
 
-    const { error } = await supabase
+    const { error } = await supabaseUntyped
       .from("leads")
       .update({ stage: newStage })
       .eq("id", leadId);
@@ -190,7 +209,7 @@ function LeadsPage() {
   const createLead = async (data: Partial<Lead>) => {
     if (!workspaceId || !user) return;
 
-    const { error } = await supabase.from("leads").insert({
+    const { error } = await supabaseUntyped.from("leads").insert({
       workspace_id: workspaceId,
       created_by: user.id,
       name: data.name!,
@@ -203,6 +222,7 @@ function LeadsPage() {
       campaign_id: data.campaign_id || null,
       stage: "base_lead_mapeado",
       lead_source: data.lead_source || null,
+      assigned_to: data.assigned_to || null,
     });
 
     if (error) {
@@ -536,24 +556,56 @@ function LeadDialog({
     { id: string; content: string; variant: number }[]
   >([]);
   const [generating, setGenerating] = useState(false);
+  const [members, setMembers] = useState<WorkspaceMember[]>([]);
+  const [customFields, setCustomFields] = useState<CustomField[]>([]);
+  const [customValues, setCustomValues] = useState<Record<string, string>>({});
+  const [newFieldName, setNewFieldName] = useState("");
 
   useEffect(() => {
     setEdit(lead);
 
-    if (lead) {
-      supabase
-        .from("lead_messages")
-        .select("id,content,variant")
-        .eq("lead_id", lead.id)
-        .order("created_at", { ascending: false })
-        .then(({ data }) => setMessages(data ?? []));
-    }
-  }, [lead]);
+    if (!lead || !workspaceId) return;
+
+    supabase
+      .from("lead_messages")
+      .select("id,content,variant")
+      .eq("lead_id", lead.id)
+      .order("created_at", { ascending: false })
+      .then(({ data }) => setMessages(data ?? []));
+
+    supabase
+      .from("workspace_members")
+      .select("user_id,role")
+      .eq("workspace_id", workspaceId)
+      .then(({ data }) => setMembers((data ?? []) as WorkspaceMember[]));
+
+    supabaseUntyped
+      .from("custom_fields")
+      .select("id,name,field_key")
+      .eq("workspace_id", workspaceId)
+      .then(async ({ data }: { data: CustomField[] | null }) => {
+        const fields = data ?? [];
+        setCustomFields(fields);
+
+        const { data: values } = await supabaseUntyped
+          .from("lead_custom_field_values")
+          .select("custom_field_id,value")
+          .eq("lead_id", lead.id);
+
+        const mapped: Record<string, string> = {};
+
+        ((values ?? []) as LeadCustomFieldValue[]).forEach((v) => {
+          mapped[v.custom_field_id] = v.value ?? "";
+        });
+
+        setCustomValues(mapped);
+      });
+  }, [lead, workspaceId]);
 
   if (!lead || !edit) return null;
 
   const save = async () => {
-    const { error } = await supabase
+    const { error } = await supabaseUntyped
       .from("leads")
       .update({
         name: edit.name,
@@ -566,20 +618,49 @@ function LeadDialog({
         stage: edit.stage,
         campaign_id: edit.campaign_id,
         lead_source: edit.lead_source,
+        assigned_to: edit.assigned_to,
       })
       .eq("id", lead.id);
 
     if (error) {
       toast.error(error.message);
-    } else {
-      toast.success("Saved");
-      onChanged();
-      onClose();
+      return;
     }
+
+    if (workspaceId) {
+      const rows = Object.entries(customValues).map(
+        ([custom_field_id, value]) => ({
+          workspace_id: workspaceId,
+          lead_id: lead.id,
+          custom_field_id,
+          value,
+        })
+      );
+
+      if (rows.length > 0) {
+        const { error: customError } = await supabaseUntyped
+          .from("lead_custom_field_values")
+          .upsert(rows, {
+            onConflict: "lead_id,custom_field_id",
+          });
+
+        if (customError) {
+          toast.error(customError.message);
+          return;
+        }
+      }
+    }
+
+    toast.success("Saved");
+    onChanged();
+    onClose();
   };
 
   const remove = async () => {
-    const { error } = await supabase.from("leads").delete().eq("id", lead.id);
+    const { error } = await supabaseUntyped
+      .from("leads")
+      .delete()
+      .eq("id", lead.id);
 
     if (error) {
       toast.error(error.message);
@@ -643,7 +724,7 @@ function LeadDialog({
 
   const sendMessage = async (_content: string) => {
     try {
-      const { error } = await supabase
+      const { error } = await supabaseUntyped
         .from("leads")
         .update({ stage: "tentando_contato" })
         .eq("id", lead.id);
@@ -742,6 +823,34 @@ function LeadDialog({
             />
           </Field>
 
+          <Field label="Owner">
+            <Select
+              value={edit.assigned_to ?? "none"}
+              onValueChange={(v) =>
+                setEdit({
+                  ...edit,
+                  assigned_to: v === "none" ? null : v,
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select owner" />
+              </SelectTrigger>
+
+              <SelectContent>
+                <SelectItem value="none">Unassigned</SelectItem>
+
+                {members.map((m) => (
+                  <SelectItem key={m.user_id} value={m.user_id}>
+                    {m.user_id === user?.id
+                      ? "You"
+                      : `User ${m.user_id.slice(0, 8)}`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+
           <div className="col-span-2">
             <Field label="Campaign">
               <Select
@@ -783,7 +892,83 @@ function LeadDialog({
           </div>
         </div>
 
-        <div className="border-t pt-4 mt-2">
+        <div className="border rounded-md p-4 space-y-4 mt-4">
+          <div>
+            <h3 className="text-sm font-medium">Custom Fields</h3>
+
+            <p className="text-xs text-muted-foreground">
+              Workspace-specific lead attributes.
+            </p>
+          </div>
+
+          <div className="flex gap-2">
+            <Input
+              placeholder="Field name"
+              value={newFieldName}
+              onChange={(e) => setNewFieldName(e.target.value)}
+            />
+
+            <Button
+              type="button"
+              onClick={async () => {
+                if (!workspaceId || !user || !newFieldName.trim()) return;
+
+                const field_key = newFieldName
+                  .trim()
+                  .toLowerCase()
+                  .normalize("NFD")
+                  .replace(/[\u0300-\u036f]/g, "")
+                  .replace(/[^a-z0-9]+/g, "_")
+                  .replace(/^_+|_+$/g, "");
+
+                const { data, error } = await supabaseUntyped
+                  .from("custom_fields")
+                  .insert({
+                    workspace_id: workspaceId,
+                    name: newFieldName.trim(),
+                    field_key,
+                    created_by: user.id,
+                  })
+                  .select("id,name,field_key")
+                  .single();
+
+                if (error) {
+                  toast.error(error.message);
+                  return;
+                }
+
+                setCustomFields((prev) => [...prev, data as CustomField]);
+                setNewFieldName("");
+              }}
+            >
+              Add field
+            </Button>
+          </div>
+
+          <div className="space-y-3">
+            {customFields.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                No custom fields yet.
+              </p>
+            )}
+
+            {customFields.map((field) => (
+              <Field key={field.id} label={field.name}>
+                <Input
+                  value={customValues[field.id] ?? ""}
+                  onChange={(e) =>
+                    setCustomValues({
+                      ...customValues,
+                      [field.id]: e.target.value,
+                    })
+                  }
+                />
+              </Field>
+            ))}
+          </div>
+        </div>
+
+        <div className="border-t pt-4 mt-4">
           <div className="flex items-center justify-between mb-3">
             <div>
               <h3 className="text-sm font-medium flex items-center gap-1.5">
