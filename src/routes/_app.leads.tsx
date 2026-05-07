@@ -90,7 +90,7 @@ function LeadsPage() {
   }, [workspaceId]);
 
   const grouped = useMemo(() => {
-    const g: Record<StageId, Lead[]> = Object.fromEntries(STAGES.map((s) => [s.id, []])) as Record<StageId, Lead[]>;
+    const g = Object.fromEntries(STAGES.map((s) => [s.id, [] as Lead[]])) as Record<StageId, Lead[]>;
     for (const l of leads) g[l.stage]?.push(l);
     return g;
   }, [leads]);
