@@ -204,9 +204,8 @@ function Column({
       </div>
       <div
         ref={setNodeRef}
-        className={`rounded-lg border border-dashed p-2 min-h-[60vh] space-y-2 transition-colors ${
-          isOver ? "bg-accent/60 border-primary/40" : "bg-muted/30 border-border"
-        }`}
+        className={`rounded-lg border border-dashed p-2 min-h-[60vh] space-y-2 transition-colors ${isOver ? "bg-accent/60 border-primary/40" : "bg-muted/30 border-border"
+          }`}
       >
         {leads.map((lead) => (
           <DraggableCard key={lead.id} lead={lead} onOpen={onOpen} />
@@ -237,9 +236,8 @@ function DraggableCard({ lead, onOpen }: { lead: Lead; onOpen: (l: Lead) => void
 function LeadCard({ lead, dragging }: { lead: Lead; dragging?: boolean }) {
   return (
     <div
-      className={`rounded-md border bg-card p-3 shadow-sm ${
-        dragging ? "ring-2 ring-primary shadow-md" : "hover:border-primary/40"
-      }`}
+      className={`rounded-md border bg-card p-3 shadow-sm ${dragging ? "ring-2 ring-primary shadow-md" : "hover:border-primary/40"
+        }`}
     >
       <div className="text-sm font-medium leading-tight">{lead.name}</div>
       {lead.title && <div className="text-xs text-muted-foreground mt-0.5">{lead.title}</div>}
@@ -430,6 +428,26 @@ function LeadDialog({
     }
   };
 
+  const sendMessage = async (_content: string) => {
+    try {
+      const { error } = await supabase
+        .from("leads")
+        .update({ stage: "tentando_contato" })
+        .eq("id", lead.id);
+
+      if (error) throw error;
+
+      setEdit((prev) =>
+        prev ? { ...prev, stage: "tentando_contato" as StageId } : prev
+      );
+
+      toast.success("Message sent");
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not send message");
+    }
+  };
+
   return (
     <Dialog open={!!lead} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -487,16 +505,27 @@ function LeadDialog({
               <div key={m.id} className="rounded-md border bg-muted/30 p-3 text-sm whitespace-pre-wrap">
                 <div className="flex items-center justify-between mb-1.5 text-xs text-muted-foreground">
                   <span>Variation {m.variant}</span>
-                  <button
-                    className="inline-flex items-center gap-1 hover:text-foreground"
-                    onClick={() => {
-                      navigator.clipboard.writeText(m.content);
-                      toast.success("Copied");
-                    }}
-                  >
-                    <Copy className="h-3 w-3" /> Copy
-                  </button>
+
+                  <div className="flex items-center gap-3">
+                    <button
+                      className="inline-flex items-center gap-1 hover:text-foreground"
+                      onClick={() => {
+                        navigator.clipboard.writeText(m.content);
+                        toast.success("Copied");
+                      }}
+                    >
+                      <Copy className="h-3 w-3" /> Copy
+                    </button>
+
+                    <button
+                      className="inline-flex items-center gap-1 hover:text-foreground"
+                      onClick={() => sendMessage(m.content)}
+                    >
+                      <Mail className="h-3 w-3" /> Send
+                    </button>
+                  </div>
                 </div>
+
                 {m.content}
               </div>
             ))}
