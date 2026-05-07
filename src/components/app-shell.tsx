@@ -1,7 +1,7 @@
 import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
-import { LayoutGrid, Megaphone, LogOut, Sparkles } from "lucide-react";
+import { LayoutGrid, Megaphone, LogOut, Sparkles, BarChart3 } from "lucide-react";
 import { useEffect } from "react";
 
 export function AppShell() {
@@ -31,6 +31,7 @@ export function AppShell() {
   }
 
   const nav = [
+    { to: "/dashboard", label: "Dashboard", icon: BarChart3 },
     { to: "/leads", label: "Leads", icon: LayoutGrid },
     { to: "/campaigns", label: "Campaigns", icon: Megaphone },
   ];
@@ -42,12 +43,16 @@ export function AppShell() {
           <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
             <Sparkles className="h-4 w-4" />
           </div>
-          <span className="text-sm font-semibold tracking-tight text-sidebar-foreground">Pipely</span>
+          <span className="text-sm font-semibold tracking-tight text-sidebar-foreground">
+            Pipely
+          </span>
         </div>
+
         <nav className="flex-1 p-3 space-y-1">
           {nav.map((n) => {
             const active = location.pathname.startsWith(n.to);
             const Icon = n.icon;
+
             return (
               <Link
                 key={n.to}
@@ -64,13 +69,23 @@ export function AppShell() {
             );
           })}
         </nav>
+
         <div className="border-t border-sidebar-border p-3">
-          <div className="px-2 pb-2 text-xs text-muted-foreground truncate">{user.email}</div>
-          <Button variant="ghost" size="sm" className="w-full justify-start" onClick={() => signOut()}>
+          <div className="px-2 pb-2 text-xs text-muted-foreground truncate">
+            {user.email}
+          </div>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start"
+            onClick={() => signOut()}
+          >
             <LogOut className="h-4 w-4 mr-2" /> Sign out
           </Button>
         </div>
       </aside>
+
       <main className="flex-1 overflow-auto">
         <Outlet />
       </main>
