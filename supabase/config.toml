@@ -1,1 +1,4 @@
 project_id = "vuyxaakvumzkirvzbtns"
+
+[functions.generate-messages]
+verify_jwt = true
